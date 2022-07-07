@@ -33,7 +33,7 @@ func Run() (err error) {
 	app := cli.NewApp()
 	app.Name = "croc"
 	if Version == "" {
-		Version = "v9.5.2-4a8c19b"
+		Version = "v9.5.6-b7e4a73"
 	}
 	app.Version = Version
 	app.Compiled = time.Now()
@@ -61,6 +61,7 @@ func Run() (err error) {
 			Description: "send file(s), or folder, over the relay",
 			ArgsUsage:   "[filename(s) or folder]",
 			Flags: []cli.Flag{
+				&cli.BoolFlag{Name: "zip", Usage: "zip folder before sending"},
 				&cli.StringFlag{Name: "code", Aliases: []string{"c"}, Usage: "codephrase used to connect to relay"},
 				&cli.StringFlag{Name: "hash", Value: "xxhash", Usage: "hash algorithm (xxhash, imohash, md5)"},
 				&cli.StringFlag{Name: "text", Aliases: []string{"t"}, Usage: "send some text"},
@@ -94,7 +95,7 @@ func Run() (err error) {
 		&cli.BoolFlag{Name: "local", Usage: "force to use only local connections"},
 		&cli.BoolFlag{Name: "ignore-stdin", Usage: "ignore piped stdin"},
 		&cli.BoolFlag{Name: "overwrite", Usage: "do not prompt to overwrite"},
-		&cli.StringFlag{Name: "curve", Value: "siec", Usage: "choose an encryption curve (" + strings.Join(pake.AvailableCurves(), ", ") + ")"},
+		&cli.StringFlag{Name: "curve", Value: "p256", Usage: "choose an encryption curve (" + strings.Join(pake.AvailableCurves(), ", ") + ")"},
 		&cli.StringFlag{Name: "ip", Value: "", Usage: "set sender ip if known e.g. 10.0.0.1:9009, [::1]:9009"},
 		&cli.StringFlag{Name: "relay", Value: models.DEFAULT_RELAY, Usage: "address of the relay", EnvVars: []string{"CROC_RELAY"}},
 		&cli.StringFlag{Name: "relay6", Value: models.DEFAULT_RELAY6, Usage: "ipv6 address of the relay", EnvVars: []string{"CROC_RELAY6"}},
@@ -186,6 +187,7 @@ func send(c *cli.Context) (err error) {
 		Curve:          c.String("curve"),
 		HashAlgorithm:  c.String("hash"),
 		ThrottleUpload: c.String("throttleUpload"),
+		ZipFolder:      c.Bool("zip"),
 	}
 	if crocOptions.RelayAddress != models.DEFAULT_RELAY {
 		crocOptions.RelayAddress6 = ""
@@ -266,8 +268,7 @@ func send(c *cli.Context) (err error) {
 		// generate code phrase
 		crocOptions.SharedSecret = utils.GetRandomName()
 	}
-
-	minimalFileInfos, err := croc.GetFilesInfo(fnames)
+	minimalFileInfos, emptyFoldersToTransfer, totalNumberFolders, err := croc.GetFilesInfo(fnames, crocOptions.ZipFolder)
 	if err != nil {
 		return
 	}
@@ -280,7 +281,7 @@ func send(c *cli.Context) (err error) {
 	// save the config
 	saveConfig(c, crocOptions)
 
-	err = cr.Send(minimalFileInfos)
+	err = cr.Send(minimalFileInfos, emptyFoldersToTransfer, totalNumberFolders)
 
 	return
 }
@@ -320,7 +321,6 @@ func makeTempFileWithString(s string) (fnames []string, err error) {
 	fnames = []string{f.Name()}
 	return
 }
-
 
 func saveConfig(c *cli.Context, crocOptions croc.Options) {
 	if c.Bool("remember") {

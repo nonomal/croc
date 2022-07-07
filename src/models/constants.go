@@ -79,15 +79,16 @@ func init() {
 		}
 	}
 	var err error
-	DEFAULT_RELAY, err = lookup(DEFAULT_RELAY)
+	var addr string
+	addr, err = lookup(DEFAULT_RELAY)
 	if err == nil {
-		DEFAULT_RELAY += ":" + DEFAULT_PORT
+		DEFAULT_RELAY = net.JoinHostPort(addr, DEFAULT_PORT)
 	} else {
 		DEFAULT_RELAY = ""
 	}
-	DEFAULT_RELAY6, err = lookup(DEFAULT_RELAY6)
+	addr, err = lookup(DEFAULT_RELAY6)
 	if err == nil {
-		DEFAULT_RELAY6 = "[" + DEFAULT_RELAY6 + "]:" + DEFAULT_PORT
+		DEFAULT_RELAY6 = net.JoinHostPort(addr, DEFAULT_PORT)
 	} else {
 		DEFAULT_RELAY6 = ""
 	}
@@ -98,17 +99,20 @@ func lookup(address string) (ipaddress string, err error) {
 	if !INTERNAL_DNS {
 		return localLookupIP(address)
 	}
-	result := make(chan string, len(publicDns))
+	type Result struct {
+		s   string
+		err error
+	}
+	result := make(chan Result, len(publicDns))
 	for _, dns := range publicDns {
 		go func(dns string) {
-			s, err := remoteLookupIP(address, dns)
-			if err == nil {
-				result <- s
-			}
+			var r Result
+			r.s, r.err = remoteLookupIP(address, dns)
+			result <- r
 		}(dns)
 	}
 	for i := 0; i < len(publicDns); i++ {
-		ipaddress = <-result
+		ipaddress = (<-result).s
 		if ipaddress != "" {
 			return
 		}
